@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+
+		<title>Protocols in Data Center - A Comparative Overview</title>
+
+		<meta name="description" content="A speech talking about data center protocols in recent years">
+		<meta name="author" content="Yao Li">
+
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/default.css" id="theme">
+
+		<!-- For syntax highlighting -->
+		<link rel="stylesheet" href="lib/css/zenburn.css">
+
+		<!-- If the query includes 'print-pdf', use the PDF print sheet -->
+		<script>
+			document.write( '<link rel="stylesheet" href="css/print/' + ( window.location.search.match( /print-pdf/gi ) ? 'pdf' : 'paper' ) + '.css" type="text/css" media="print">' );
+		</script>
+
+		<!--[if lt IE 9]>
+		<script src="lib/js/html5shiv.js"></script>
+		<![endif]-->
+	</head>
+	<body>
+		<div class="reveal">
+		<div class="slides">
+			<section data-markdown data-separator="^;;;;" data-vertical="^;;">
+			    <script type="text/template">
+## Protocols in Data Center
+
+A Comparative Overview
+
+by Yao Li
+;;;;
+### Overview
+- DCTCP
+- D3
+- D2TCP 
+- PDQ
+- DeTail
+- Comparison
+;;;;
+# DCTCP
+### Data Center TCP
+(Mohammad Alizadeh et el. Sigcomm '10)
+;;
+### Objective
+1. Low latency for short flows.
+2. High burst tolerance.
+3. High utilization for long flows.
+;;
+### Understanding Performance Impairments
+1. **Switches**: shallow packet buffers.
+2. **Incast**: incast phenomenon.
+3. **Queue buildup**: short flows queuing behind large flows (*very frequently*).
+4. **Buffer pressure**: activity on different ports is coupled by the shared memory pool.
+;;
+### Main Method
+1. **Switch**: queue occupancy marking.
+2. **Receiver**: convey exact sequence of marked packets back to the sender.
+3. **Sender**: control *cwnd* according to the fraction of packets that are marked.
+;;
+### Controller at the Sender
+- The sender maintains an estimate of the fraction of packets that are marked, called $\alpha$:
+$$\alpha \leftarrow (1 - g) \times \alpha + g \times F$$
+- Then adjust *cwnd* by:
+$$cwnd \leftarrow cwnd \times (1 - \alpha / 2)$$
+;;
+### Benifits
+1. **Queue buildup**: DCTCP reduces queueing delays on congested switch ports.
+2. **Buffer Pressure**: A congested port's queue does not grow exceedingly large.
+3. **Incast**: senders receive enough marks during the first one or two RTTs to tame the size of follow up bursts.
+;;
+### Limitations
+1. **Deadline-unawareness**: 7 - 25% of flow deadline are missed. (according to *D3*)
+2. **Single-path**: DCTCP focus on single-path mechanisms that are bound by the performance of flow-hashing. (according to *DeTail*)
+3. **Fair sharing** may delay the flow completion time. (according to *PDQ*)
+;;;;
+# D3
+### Better Netver than Late: Meeting Deadlines in Datacenter Networks
+(Christo Wilson et el. Sigcomm '11)
+;;
+### Objective
+1. Maximize application throughput (*deadline aware!*).
+2. Burst tolerance.
+3. High utilization.
+;;
+### Main Method
+1. **Rate control**: calculate desired rate by:
+$$r = \frac{s}{d}$$
+2. **Rate allocation**: allocate rate $a$ given to a flow is:
+$$a = \begin{cases}
+r + fs & \text{for a deadline flow,} \\\\
+fs & \text{for a non-deadline flow}
+\end{cases}$$
+;;
+### Benefits
+1. Without any deadline information, D3 outperforms TCP in terms of short flow latency and burst tolerance.
+2. With deadline information, D3 doubles the peak load that the datacenter network can support.
+;;
+### Limitations
+1. Practical issues. (according to *D3* and *D2TCP*)
+2. No soft deadlines. (according to *D3*)
+3. In some race conditions, D3 inverts the priority of 24 - 33% requests, thus contributing to missed deadlines. Sometimes it would miss more deadline flows than DCTCP! (according to *D2TCP*)
+4. In some conditions, D3 would miss deadlines because of its fair sharing mechanisms. (according to *PDQ*)
+;;;;
+# D2TCP
+### Deadline-Aware Datacenter TCP
+(Balajee Vamanan et el. Sigcomm '12)
+;;
+### Objective
+1. Meet OLDI(Online Data Intensive) deadlines.
+2. Achieve high bandwidth for background flows.
+3. Woring with existing switch hardware.
+4. Be able to coexist with legacy TCP.
+;;
+### Main Method
+1. Start with DCTCP and build deadline awareness on top of it. Recall how we calculate $\alpha$ in DCTCP:
+$$\alpha \leftarrow (1 - g) \times \alpha + g \times F$$
+2. Instead of adjusting *cwnd* according to $\alpha$, D2TCP uses $p$, computed as:
+$$p = \alpha^d$$
+where $d$ is a deadline imminence factor, defined as:
+$$d = \frac{T_c}{D}$$
+3. Then adjust *cwnd* as follows:
+$$cwnd = \begin{cases}
+cwnd \times (1 - p / 2) & \text{if } p > 0 \\\\
+cwnd + 1 & \text{if } p = 0
+\end{cases}$$
+;;
+### Gamma-correction
+![Gamma-correction](images/gamma-correction.png)
+;;
+### Benefits
+1. Reduces the fraction of missed dealines compared to DCTCP and D3 by 75% and 50%, respectively.
+2. Coexists with TCP flows without degrading their performance.
+;;
+### Limitations
+1. Fair sharing issues same as DCTCP.
+2. Single-path issues same as DCTCP.
+;;;;
+# DeTail
+### DeTail: Reducing the Flow Completion Time Tail in Datacenter Networks
+(David Zats et el. Sigcomm '12)
+;;
+### Objective
+Reduce the flow completion time tail.
+;;
+### Causes of long tails
+1. Packet losses and retransmissions.
+2. Absence of prioritization.
+3. Uneven load balancing.
+;;
+### Main Methods
+1. **Link Layer**: Priority flow control and drain byte counters each queue of each priority.
+2. **Network Layer**: Bitmap load balancing.
+3. **Transport Layer**: Packet reordering resistance; congestion control based on drain byte counters.
+4. **Application Layer**: DeTail depends on application to properly specify flow priorities.
+;;
+### Benefits
+DeTail significantly reduces 99th percentile flow completion time.
+;;
+### Limitations
+1. **Priority** provides less information than deadline. High priority flows may always block low priority flows.
+2. It's more difficult to choose a proper priority than deadline.
+;;;;
+# PDQ
+### Finishing Flows Quickly With Preemptive Scheduling
+(Chi-Yao Hong et el. Sigcomm '12)
+;;
+### Objective
+1. Minimize delays from network congestion.
+2. Meet soft-real-time deadlines with high probability.
+;;
+### Main Methods
+1. Use a distributed algorithm to allow a set of switches to collaboratively gather information and converge to a stable agreement on allocation decisions.
+2. Use *preemitive* strategies like EDF (Earliest Deadline First) and SJF (Shortest Job First) instead of fair sharing to reduce mean flow completion time.
+;;
+### Motivating Example
+![PDQ Motivating Example](images/pdq-example.png)
+;;
+### Benefits
+1. PDQ supports 3 times more concurrent senders than D3 while satisfying their flow deadlines.
+2. When flows have no deadlines, PDQ can reduce mean flow completion time by ~30% or more compared with TCP, RCP and D3.
+;;
+### Limitations
+1. Flow completion time is not the best metric for some protocols.
+2. User may be much more inclined to split long flow into small flows.
+;;;;
+# Comparison
+;;
+### Comparison
+<center><table>
+    <tr>
+	    <th>protocol</th><th>deadline-awareness</th><th>modifications</th><th>fair-sharing</th><th>multi-path</th>
+    </tr>
+    <tr>
+	    <td>DCTCP</td><td>✗</td><td>L4</td><td>✓</td><td>FH(Flow Hashing)</td>
+    </tr>
+    <tr>
+	    <td>D3</td><td>✓ (hard)</td><td>L3, L5</td><td>✓</td><td>FH</td>
+    </tr>
+    <tr>
+	    <td>D2TCP</td><td>✓ (soft)</td><td>L4, L5</td><td>✓</td><td>FH</th>
+    </tr>
+    <tr>
+	    <td>DeTail</td><td>priority-awareness</td><td>L2-L5</td><td>✓</td><td>bitmap load balancing</td>
+    </tr>
+    <tr>
+	    <td>PDQ</td><td>✓ (soft)</td><td>L3-L5</td><td>✗</td><td>FH</th>
+    </tr>
+</table></center>
+;;
+### Common Objectives
+1. Deadline/Priority-awareness.
+2. Flow completion time optimization.
+3. Congestion control.
+;;
+However, there exists some principle conflicts among them.
+;;
+## Principle Conflicts
+### The Amount of Modifications
+Quoted from D3:
+<blockquote>
+	...the datacenter is a homogenous environment owned by a single entity. Consequently, incremental deployment, backwards compatibility, and being friendly to legacy protocols are <em>non-goals</em>.
+</blockquote>
+Quoted from ICTCP:
+<blockquote>
+	The smaller change we make to the existing system, the better.
+</blockquote>
+;;
+### Modifications in These Protocols
+<center><table>
+    <tr>
+	    <th>Protocol</th><th>Server</th><th>Switch</th>
+    </tr>
+    <tr>
+	    <td>DCTCP</td><td>✓</td><td></td>
+    </tr>
+    <tr>
+	    <td>D3</td><td></td><td>✓</td>
+    </tr>
+    <tr>
+	    <td>D2TCP</td><td>✓</td><td></td>
+    </tr>
+    <tr>
+	    <td>DeTail</td><td>✓</td><td>✓</td>
+    </tr>
+    <tr>
+	    <td>PDQ</td><td>✓</td><td>✓</td>
+    </tr>
+</table></center>
+;;
+## Principle Conflicts
+### Fair Sharing vs Preemptive Scheduling
+Quoted from D3:
+<blockquote>
+	...assigning non-deadline flows with a share of the spare capacity ensures that they make progress and network utilization remains high.
+</blockquote>
+Quoted from PDQ:
+<blockquote>
+	...at least 99% of jobs have a smaller completion time under SJF than under fairsharing... 85% - 95% of PDQ flows have a smaller completion time than RCP... Moreover, unfairness might not be a primary concern in data center networks where the network is owned by a single entity that has full control of flow criticality.
+</blockquote>
+;;;;
+## Some Thoughts of My Own
+1. What can we do on switches to make D2TCP better with fair sharing strategies?
+2. Can we separate flows into two types: need fair sharing or not?
+3. Is deadline enough? What about deadline with priotities?
+4. Why would every server use the same strategies to adjust *cwnd*, despite they are in different topologies?
+;;;;
+## FAQ
+;;;;
+## Thanks!
+			    </script>
+			</section>
+		</div>
+		</div>
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.min.js"></script>
+		<script>
+
+			Reveal.initialize({
+				controls: true,
+				progress: true,
+				history: true,
+				center: true,
+				overview: true,
+
+				width: 1100,
+
+				theme: Reveal.getQueryHash().theme || 'serif',
+				transition: Reveal.getQueryHash().transition || 'default',
+
+				// Optional libraries used to extend on reveal.js
+				dependencies: [
+					{ src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+					{ src: 'plugin/markdown/showdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+					{ src: 'plugin/zoom-js/zoom.js', async: true, condition: function() { return !!document.body.classList; } },
+					{ src: 'plugin/notes/notes.js', async: true, condition: function() { return !!document.body.classList; } },
+					{ src: 'http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML', async: true, callback: function() { MathJax.Hub.Rerender(); } }
+				]
+			});
+			Reveal.addEventListener( 'slidechanged', function( event ) {
+				MathJax.Hub.Rerender();
+			});
+		</script>
+		<script type="text/x-mathjax-config">
+			MathJax.Hub.Config({ 
+				tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]} 
+			}); 
+		</script>
+	</body>
+</html>
